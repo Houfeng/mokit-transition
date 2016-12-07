@@ -1,0 +1,13 @@
+*.DS_Store
+*.log
+*.sh
+logs/
+node_modules/
+scripts/
+docs/
+test/
+.babelrc
+.eslintrc.yml
+.travis.yml
+server.yml
+webpack.config.js
