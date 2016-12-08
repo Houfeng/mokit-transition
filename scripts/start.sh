@@ -2,4 +2,4 @@
 
 set -e
 
-nokit stop && nokit start --name mokit-transition --config server -e local
+nokit start --name mokit-transition --config server -e local

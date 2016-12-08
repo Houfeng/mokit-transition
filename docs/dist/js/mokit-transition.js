@@ -100,10 +100,11 @@
 	  });
 	
 	  mokit.Transition = Transition;
+	  exports.Transition = Transition;
 	};
 	
 	/* eslint-disable */
-	if ("function" != 'undefined' && typeof mokit != 'undefined') {
+	if (typeof mokit != 'undefined') {
 	  mokit.use(exports);
 	}
 	/* eslint-enable */

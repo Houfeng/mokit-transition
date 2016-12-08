@@ -1,6 +1,6 @@
 {
   "name": "mokit-transition",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "description": "mokit-transition",
   "main": "./lib/index.js",
   "scripts": {
@@ -16,6 +16,9 @@
   },
   "author": "",
   "license": "Apache License",
+  "peerDependencies": {
+    "mokit": "^3.0.0-beta30"
+  },
   "devDependencies": {
     "babel": "^6.5.2",
     "babel-core": "^6.18.2",
