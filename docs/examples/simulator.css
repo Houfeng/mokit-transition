@@ -74,6 +74,7 @@ html, body {
     top: 0;
     width: 100%;
     height: 100%;
+    cursor: default;
   }
   .simulator .caption, .simulator .home {
     display: none;
