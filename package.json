@@ -1,6 +1,6 @@
 {
   "name": "mokit-transition",
-  "version": "0.0.9",
+  "version": "1.0.0",
   "description": "mokit-transition",
   "main": "./lib/index.js",
   "scripts": {
