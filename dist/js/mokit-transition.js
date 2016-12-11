@@ -46,78 +46,106 @@
 
 	/*istanbul ignore next*/'use strict';
 	
-	__webpack_require__(1);
-	var animationClasses = __webpack_require__(3);
-	var utils = __webpack_require__(4);
-	
-	exports.install = function (mokit) {
-	
-	  var EventEmitter = mokit.EventEmitter;
-	  var Class = mokit.Class;
-	
-	  var Transition = new Class({
-	
-	    constructor: function /*istanbul ignore next*/constructor(num) {
-	      this.animationClasses = animationClasses.get(num);
-	    },
-	
-	    init: function /*istanbul ignore next*/init(view) {
-	      utils.addClass(view.$element, 'ts-container');
-	    },
-	
-	    clean: function /*istanbul ignore next*/clean(view) {
-	      utils.removeClass(view.$element, 'ts-container');
-	    },
-	
-	    prep: function /*istanbul ignore next*/prep(newComponent, oldComponent) {
-	      if (!newComponent || !oldComponent) return;
-	      utils.addClass(newComponent.$element, 'ts-item');
-	      utils.addClass(oldComponent.$element, 'ts-item');
-	    },
-	
-	    go: function /*istanbul ignore next*/go(newComponent, oldComponent, done) {
-	      if (!newComponent || !oldComponent) return done();
-	      var doneCount = 0;
-	      var newEmitter = new EventEmitter(newComponent.$element);
-	      var oldEmitter = new EventEmitter(oldComponent.$element);
-	      var checkDone = function () {
-	        if (++doneCount > 1) {
-	          newEmitter.off(utils.ANIMATION_END_EVENT_NAME, checkDone);
-	          oldEmitter.off(utils.ANIMATION_END_EVENT_NAME, checkDone);
-	          utils.removeClass(oldComponent.$element, this.animationClasses.leave);
-	          utils.removeClass(oldComponent.$element, 'ts-item');
-	          utils.removeClass(newComponent.$element, this.animationClasses.enter);
-	          utils.removeClass(newComponent.$element, 'ts-item');
-	          done();
-	        }
-	      }.bind(this);
-	      newEmitter.on(utils.ANIMATION_END_EVENT_NAME, checkDone);
-	      oldEmitter.on(utils.ANIMATION_END_EVENT_NAME, checkDone);
-	      utils.addClass(newComponent.$element, this.animationClasses.enter);
-	      utils.addClass(oldComponent.$element, this.animationClasses.leave);
-	    }
-	
-	  });
-	
-	  mokit.Transition = Transition;
-	  exports.Transition = Transition;
-	};
-	
-	/* eslint-disable */
-	if (typeof mokit != 'undefined') {
-	  mokit.use(exports);
-	}
-	/* eslint-enable */
+	var Plugin = __webpack_require__(1);
+	module.exports = new Plugin(function () {
+	  return __webpack_require__(2);
+	});
 
 /***/ },
 /* 1 */
 /***/ function(module, exports) {
 
+	/*istanbul ignore next*/'use strict';
+	
+	var factory = function factory(thunk) {
+	  function Plugin(opts) {
+	    return typeof Plugin.entity === 'function' ? new Plugin.entity(opts) : Plugin.entity;
+	  }
+	  Plugin.install = function (mokit) {
+	    factory.mokit = mokit;
+	    this.entity = thunk();
+	    this.entity.install(mokit);
+	  };
+	  if (typeof mokit !== 'undefined') {
+	    mokit.use(Plugin);
+	  }
+	  return Plugin;
+	};
+	
+	module.exports = factory;
+
+/***/ },
+/* 2 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/*istanbul ignore next*/'use strict';
+	
+	__webpack_require__(3);
+	var classes = __webpack_require__(5);
+	var utils = __webpack_require__(6);
+	var mokit = __webpack_require__(1).mokit;
+	var EventEmitter = mokit.EventEmitter;
+	var Class = mokit.Class;
+	
+	var Transition = new Class({
+	
+	  constructor: function /*istanbul ignore next*/constructor(id) {
+	    this.classes = classes.get(id);
+	  },
+	
+	  init: function /*istanbul ignore next*/init(view) {
+	    utils.addClass(view.$element, 'ts-container');
+	  },
+	
+	  clean: function /*istanbul ignore next*/clean(view) {
+	    utils.removeClass(view.$element, 'ts-container');
+	  },
+	
+	  prep: function /*istanbul ignore next*/prep(newComponent, oldComponent) {
+	    if (!newComponent || !oldComponent) return;
+	    utils.addClass(newComponent.$element, 'ts-item');
+	    utils.addClass(oldComponent.$element, 'ts-item');
+	  },
+	
+	  go: function /*istanbul ignore next*/go(newComponent, oldComponent, done) {
+	    if (!newComponent || !oldComponent) return done();
+	    var doneCount = 0;
+	    var newEmitter = new EventEmitter(newComponent.$element);
+	    var oldEmitter = new EventEmitter(oldComponent.$element);
+	    var checkDone = function () {
+	      if (++doneCount > 1) {
+	        newEmitter.off(utils.ANIMATION_END_EVENT_NAME, checkDone);
+	        oldEmitter.off(utils.ANIMATION_END_EVENT_NAME, checkDone);
+	        utils.removeClass(oldComponent.$element, this.classes.leave);
+	        utils.removeClass(oldComponent.$element, 'ts-item');
+	        utils.removeClass(newComponent.$element, this.classes.enter);
+	        utils.removeClass(newComponent.$element, 'ts-item');
+	        done();
+	      }
+	    }.bind(this);
+	    newEmitter.on(utils.ANIMATION_END_EVENT_NAME, checkDone);
+	    oldEmitter.on(utils.ANIMATION_END_EVENT_NAME, checkDone);
+	    utils.addClass(newComponent.$element, this.classes.enter);
+	    utils.addClass(oldComponent.$element, this.classes.leave);
+	  }
+	
+	});
+	
+	Transition.install = function (mokit) {
+	  mokit.Transition = this;
+	};
+	
+	module.exports = Transition;
+
+/***/ },
+/* 3 */
+/***/ function(module, exports) {
+
 	// removed by extract-text-webpack-plugin
 
 /***/ },
-/* 2 */,
-/* 3 */
+/* 4 */,
+/* 5 */
 /***/ function(module, exports) {
 
 	/*istanbul ignore next*/'use strict';
@@ -411,7 +439,7 @@
 	};
 
 /***/ },
-/* 4 */
+/* 6 */
 /***/ function(module, exports) {
 
 	/*istanbul ignore next*/'use strict';

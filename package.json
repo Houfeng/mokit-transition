@@ -1,6 +1,6 @@
 {
   "name": "mokit-transition",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "description": "mokit-transition",
   "main": "./lib/index.js",
   "scripts": {
@@ -45,5 +45,8 @@
     "raw-loader": "^0.5.1",
     "selenium-webdriver": "^3.0.1",
     "webpack": "^1.13.3"
+  },
+  "dependencies": {
+    "mokit-plugin": "^1.0.5"
   }
 }
