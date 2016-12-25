@@ -1,6 +1,6 @@
 {
   "name": "mokit-transition",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "mokit-transition",
   "main": "./lib/index.js",
   "scripts": {
@@ -17,7 +17,7 @@
   "author": "",
   "license": "Apache License",
   "peerDependencies": {
-    "mokit": "^3.0.0-beta30"
+    "mokit": "^3.0.0-beta43"
   },
   "devDependencies": {
     "babel": "^6.5.2",
@@ -47,6 +47,7 @@
     "webpack": "^1.13.3"
   },
   "dependencies": {
+    "mokit": "^3.0.0-beta43",
     "mokit-plugin": "^1.0.5"
   }
 }

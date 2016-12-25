@@ -57,9 +57,7 @@
 	  }.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__), __WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
 	}
 	//普通脚本引入
-	if (typeof window !== 'undefined') {
-	  window[info.name] = entry;
-	}
+	window[info.name] = entry;
 	/* eslint-enable */
 
 /***/ },
@@ -70,7 +68,7 @@
 	
 	module.exports = {
 		"name": "mokit",
-		"version": "3.0.0-beta30"
+		"version": "3.0.0-beta43"
 	};
 
 /***/ },
@@ -84,10 +82,9 @@
 	var Class = __webpack_require__(4);
 	var Watcher = __webpack_require__(5);
 	var Observer = __webpack_require__(6);
-	var Template = __webpack_require__(10);
-	var Component = __webpack_require__(34);
+	var Template = __webpack_require__(8);
+	var Component = __webpack_require__(33);
 	var EventEmitter = __webpack_require__(7);
-	var Router = __webpack_require__(39);
 	
 	//持载模板相关对象
 	utils.copy(Template, Component);
@@ -97,20 +94,20 @@
 	Component.Watcher = Watcher;
 	Component.Observer = Observer;
 	Component.EventEmitter = EventEmitter;
-	Component.Router = Router;
 	Component.utils = utils;
 	Component.Class = Class;
 	
 	//定义安装插件的方法
 	Component.use = function (plugin) {
-	  if (utils.isNull(plugin) || !utils.isFunction(plugin.install)) {
+	  var install = plugin.install || plugin;
+	  if (!utils.isFunction(install)) {
 	    throw new Error('Invalid Plugin');
 	  }
-	  plugin.install(this);
+	  return install.call(plugin, this);
 	};
 	
 	//安装内置的路由插件
-	Component.use(Router);
+	//Component.use(Router);
 	
 	module.exports = Component;
 
@@ -778,17 +775,21 @@
 	        }
 	        return this.$super_result;
 	      });
-	      utils.each(superPrototype, function (name, value) {
+	      for (var name in superPrototype) {
+	        var value = superPrototype[name];
 	        if (utils.isFunction(value)) {
 	          this.$super[name] = value.bind(this);
 	        } else {
 	          this.$super[name] = value;
 	        }
-	      }, this);
+	      }
 	    }
 	    //调用构造
-	    if (utils.isFunction(options.constructor)) {
+	    if (utils.isFunction(options.constructor) && options.constructor !== Object) {
 	      return options.constructor.apply(this, arguments);
+	    } else {
+	      //如果没有实现 constructor 则调用父类构造
+	      this.$super.apply(this, arguments);
 	    }
 	  };
 	  //处理 prototype
@@ -1143,20 +1144,6 @@
 
 	/*istanbul ignore next*/'use strict';
 	
-	var EventEmitter = __webpack_require__(8);
-	var touch = __webpack_require__(9);
-	
-	EventEmitter.touch = touch;
-	EventEmitter.register(touch);
-	
-	module.exports = EventEmitter;
-
-/***/ },
-/* 8 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
 	var utils = __webpack_require__(3);
 	var Class = __webpack_require__(4);
 	
@@ -1246,12 +1233,12 @@
 	      return this._emitElementEvent(name, data, canBubble, cancelAble);
 	    }
 	    if (!this._listeners[name]) return;
-	    var stopBubble = false;
+	    var stopPropagation = false;
 	    this._listeners[name].forEach(function (handler) {
 	      var rs = handler.call(this._target, data);
-	      if (rs === false) stopBubble = true;
+	      if (rs === false) stopPropagation = true;
 	    }, this);
-	    return stopBubble;
+	    return stopPropagation;
 	  },
 	
 	  /**
@@ -1329,213 +1316,16 @@
 	module.exports = EventEmitter;
 
 /***/ },
-/* 9 */
+/* 8 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var utils = __webpack_require__(3);
-	
-	var SUPPORT_TOUCH = 'ontouchstart' in document;
-	var START_EVENT_NAME = SUPPORT_TOUCH ? 'touchstart' : 'mousedown';
-	var MOVE_EVENT_NAME = SUPPORT_TOUCH ? 'touchmove' : 'mousemove';
-	var END_EVENT_NAME = SUPPORT_TOUCH ? 'touchend' : 'mouseup';
-	var CUSTOM_EVENT_NAMES = 'tap,taphold,dbltap,swipe,swipeup,swiperight,swipedown,swipeleft,pointdown,pointmove,pointup';
-	
-	module.exports = {
-	  name: CUSTOM_EVENT_NAMES,
-	
-	  option: {
-	    swipeDurationThreshold: 1000,
-	    swipeHorizontalDistanceThreshold: 25,
-	    swipeVerticalDistanceThreshold: 45,
-	    holdDurationThreshold: 1000,
-	    dblDurationThreshold: 450,
-	    scrollSupressionThreshold: 25
-	  },
-	
-	  addListener: function /*istanbul ignore next*/addListener(emitter, name, listener, capture) {
-	    if (!utils.isFunction(listener)) return;
-	
-	    var self = this;
-	
-	    //处理 touchstart 事件
-	    listener.touchstart = listener.touchstart || function (event) {
-	      var point = event.changedTouches ? event.changedTouches[0] : event;
-	      listener.startPoint = listener.endPoint = {
-	        'x': point.pageX,
-	        'y': point.pageY,
-	        'timeStamp': event.timeStamp,
-	        'point': point
-	      };
-	      if (name == 'taphold') {
-	        listener.createHoldHandler(event);
-	      }
-	      //模拟鼠标事件
-	      if (name == 'pointdown') {
-	        utils.copy(listener.startPoint, event);
-	        emitter.emit('pointdown', event);
-	        emitter.isPointDown = true;
-	      }
-	    };
-	
-	    //创建 hold 处理器
-	    listener.createHoldHandler = listener.createHoldHandler || function (event) {
-	      // 处理 taphold 事件
-	      if (!listener.holdTimer && !listener.holdHandler) {
-	        var option = self.option;
-	        listener.holdHandler = function () {
-	          event.taphold = true;
-	          emitter.emit('taphold', event);
-	        };
-	        listener.holdTimer = setTimeout(function () {
-	          if (listener.holdHandler) listener.holdHandler();
-	        }, option.holdDurationThreshold);
-	      }
-	    };
-	
-	    //清除 hold 处理器
-	    listener.clearHoldHandler = listener.clearHoldHandler || function () {
-	      if (listener.holdTimer) {
-	        clearTimeout(listener.holdTimer);
-	        listener.holdTimer = null;
-	        listener.holdHandler = null;
-	      }
-	    };
-	
-	    //获取划动信息
-	    listener.getTouchInfo = function (event) {
-	      var point = event.changedTouches ? event.changedTouches[0] : event;
-	      listener.endPoint = {
-	        'x': point.pageX,
-	        'y': point.pageY,
-	        'timeStamp': event.timeStamp,
-	        'point': point
-	      };
-	      //
-	      var option = self.option;
-	      // 一些计算结果
-	      var info = {};
-	      info.timeStamp = listener.endPoint ? listener.endPoint.timeStamp : null;
-	      info.existStartAndStop = listener.endPoint && listener.startPoint;
-	      info.horizontalDistance = info.existStartAndStop ? listener.endPoint.x - listener.startPoint.x : 0;
-	      info.verticalDistance = info.existStartAndStop ? listener.endPoint.y - listener.startPoint.y : 0;
-	      info.horizontalDistanceValue = Math.abs(info.horizontalDistance);
-	      info.verticalDistanceVlaue = Math.abs(info.verticalDistance);
-	      info.isHorizontal = info.horizontalDistanceValue >= info.verticalDistanceVlaue;
-	      info.isVertical = !info.sHorizontal;
-	      info.isSwipeMove = info.horizontalDistanceValue >= option.swipeHorizontalDistanceThreshold || info.verticalDistanceVlaue >= option.swipeVerticalDistanceThreshold;
-	      info.isSwipeTime = info.existStartAndStop ? listener.endPoint.timeStamp - listener.startPoint.timeStamp <= option.swipeDurationThreshold : true;
-	      info.isHoldTime = info.existStartAndStop ? listener.endPoint.timeStamp - listener.startPoint.timeStamp >= option.holdDurationThreshold : false;
-	      //这里的 direction 仅是指划动方法，不代表 swipe 动作，swipe 动作还有时间或划动距离等因素
-	      if (info.isHorizontal && info.horizontalDistance > 0) {
-	        info.direction = 'right';
-	      } else if (info.isHorizontal && info.horizontalDistance < 0) {
-	        info.direction = 'left';
-	      } else if (info.isVertical && info.verticalDistance > 0) {
-	        info.direction = 'down';
-	      } else if (info.isVertical && info.verticalDistance < 0) {
-	        info.direction = 'up';
-	      }
-	      return info;
-	    };
-	
-	    //处理 touchmove 事件
-	    listener.touchmove = listener.touchmove || function (event) {
-	      var info = listener.getTouchInfo(event);
-	      if (info.isSwipeMove) {
-	        listener.clearHoldHandler();
-	      }
-	      var stopBubble = false;
-	      //模拟鼠标事件
-	      if (emitter.isPointDown && name == 'pointmove') {
-	        utils.copy(listener.endPoint, event);
-	        emitter.emit('pointmove', event);
-	        stopBubble = true;
-	      }
-	      //在绑定划动的方向上禁止滚动，因为 Android 4.x 不如此处理，touchend 事件将不触发
-	      if (name == 'swipe' || name == 'swipe' + info.direction) {
-	        stopBubble = true;
-	      }
-	      //如果需要阻止冒泡
-	      if (stopBubble) {
-	        return false;
-	      }
-	    };
-	
-	    //完成事件
-	    listener.done = listener.done || function (event) {
-	      listener.clearHoldHandler();
-	      var info = listener.getTouchInfo(event);
-	      //模拟鼠标事件
-	      if (name == 'pointup') {
-	        utils.copy(listener.endPoint, event);
-	        emitter.emit('pointup', event);
-	        emitter.isPointDown = false;
-	      }
-	      // 根据计算结果判断
-	      if (info.isSwipeTime && info.isSwipeMove) {
-	        event.swipe = true;
-	        event.direction = info.direction;
-	        if (name == 'swipe') {
-	          emitter.emit('swipe', event);
-	        }
-	        if (name == 'swipe' + event.direction) {
-	          emitter.emit('swipe' + event.direction, event);
-	        }
-	      } else if (info.isSwipeTime && !info.isSwipeMove && !info.isHoldTime) {
-	        if (name == 'tap') {
-	          emitter.emit('tap', event);
-	        }
-	        if (name == 'dbltap') {
-	          //处理 “双击”
-	          var option = self.option;
-	          event.dbltap = listener.PreTapTime && info.timeStamp - listener.PreTapTime <= option.dblDurationThreshold;
-	          if (event.dbltap) {
-	            emitter.emit('dbltap', event);
-	            listener.PreTapTime = null;
-	          } else {
-	            listener.PreTapTime = listener.endPoint.timeStamp;
-	          }
-	        }
-	      }
-	    };
-	
-	    //绑定组合事件
-	    emitter.on(START_EVENT_NAME, listener.touchstart, capture);
-	    emitter.on(MOVE_EVENT_NAME, listener.touchmove, capture);
-	    emitter.on(END_EVENT_NAME, listener.done, capture);
-	  },
-	
-	  removeListener: function /*istanbul ignore next*/removeListener(emitter, name, listener, capture) {
-	    //只有指定了 handler 才能取消构成组合事件的 “原事件”
-	    //否则会直接移除会将其他 touchstart 等事件也移除
-	    if (utils.isFunction(listener)) {
-	      if (utils.isFunction(listener.touchstart)) {
-	        emitter.off(START_EVENT_NAME, listener.touchstart, capture);
-	      }
-	      if (utils.isFunction(listener.touchmove)) {
-	        emitter.off(MOVE_EVENT_NAME, listener.touchmove, capture);
-	      }
-	      if (utils.isFunction(listener.done)) {
-	        emitter.off(END_EVENT_NAME, listener.done, capture);
-	      }
-	    }
-	  }
-	
-	};
-
-/***/ },
-/* 10 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Compiler = __webpack_require__(11);
-	var Directive = __webpack_require__(12);
-	var Expression = __webpack_require__(13);
-	var Template = __webpack_require__(33);
-	var directives = __webpack_require__(14);
+	var Compiler = __webpack_require__(9);
+	var Directive = __webpack_require__(10);
+	var Expression = __webpack_require__(11);
+	var Template = __webpack_require__(32);
+	var directives = __webpack_require__(12);
 	
 	Template.Template = Template;
 	Template.Compiler = Compiler;
@@ -1546,16 +1336,16 @@
 	module.exports = Template;
 
 /***/ },
-/* 11 */
+/* 9 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
 	var Class = __webpack_require__(4);
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	var utils = __webpack_require__(3);
-	var Expression = __webpack_require__(13);
-	var directives = __webpack_require__(14);
+	var Expression = __webpack_require__(11);
+	var commonDirectives = __webpack_require__(12);
 	
 	var DEFAULT_PREFIX = 'm';
 	
@@ -1573,46 +1363,47 @@
 	   */
 	  constructor: function /*istanbul ignore next*/constructor(options) {
 	    options = options || utils.create(null);
-	    options.directives = options.directives || [];
 	    this.prefix = options.prefix || DEFAULT_PREFIX;
-	    this.directives = directives.concat(options.directives);
+	    this.elementDirectives = utils.create(null);
+	    this.attributeDirectives = utils.create(null);
+	    this.registerDirectives(commonDirectives);
+	    this.registerDirectives(options.directives);
 	  },
 	
 	  /**
-	   * 解析要匹配的名称
-	   * @param {string} name 要解析的名称字符串
-	   * @param {string} type 指令类型
-	   * @param {HTMLNode} node 当前 HTML 元素结点
+	   * 添加指令
+	   * @param {Object} directives 指令集 
+	   * @returns {void} 无返回
+	   */
+	  registerDirectives: function /*istanbul ignore next*/registerDirectives(directives) {
+	    utils.each(directives, function (name, directive) {
+	      name = name.replace(/([A-Z])/g, '-$1');
+	      if (name[0] == '-') name = name.slice(1);
+	      var fullName = directive.options.prefix === false ? name : /*istanbul ignore next*/this.prefix + ':' + name;
+	      if (directive.options.type == Directive.TE) {
+	        this.elementDirectives[fullName.toUpperCase()] = directive;
+	      } else {
+	        this.attributeDirectives[fullName] = directive;
+	      }
+	    }, this);
+	  },
+	
+	  /**
+	   * 解析要 attr 指令信息
+	   * @param {string} attrName 要解析的名称字符串
 	   * @returns {Object} 解析后的对象
 	   */
-	  _parseMatchInfo: function /*istanbul ignore next*/_parseMatchInfo(name, type, node) {
-	    var parts = name.toLowerCase().split(':');
-	    var info = {
-	      type: type,
-	      compiler: this,
-	      node: node
-	    };
+	  _parseAttrInfo: function /*istanbul ignore next*/_parseAttrInfo(attrName) {
+	    var parts = attrName.toLowerCase().split(':');
+	    var info = {};
 	    if (parts.length > 1) {
-	      info.prefix = parts[0];
-	      info.name = parts[1];
+	      info.name = /*istanbul ignore next*/parts[0] + ':' + parts[1];
 	      info.decorates = parts.slice(2);
 	    } else {
-	      info.prefix = null;
 	      info.name = parts[0];
 	      info.decorates = [];
 	    }
 	    return info;
-	  },
-	
-	  /**
-	   * 查找所有匹配的指令
-	   * @param {Object} matchInfo 匹配信息
-	   * @returns {Array} 指令列表
-	   */
-	  _findDirectives: function /*istanbul ignore next*/_findDirectives(matchInfo) {
-	    return this.directives.filter(function (Directive) {
-	      return Directive.definition.test(matchInfo);
-	    }, this);
 	  },
 	
 	  /**
@@ -1662,15 +1453,12 @@
 	   * @returns {void} 无返回
 	   */
 	  _compileElement: function /*istanbul ignore next*/_compileElement(handler, node) {
-	    var matchInfo = this._parseMatchInfo(node.nodeName, Directive.TYPE_ELEMENT, node);
-	    var elementDirectives = this._findDirectives(matchInfo);
-	    elementDirectives.forEach(function (Directive) {
-	      handler.directives.push(this._createDirectiveInstance(Directive, {
-	        handler: handler,
-	        node: node,
-	        decorates: matchInfo.decorates
-	      }));
-	    }, this);
+	    var ElementDirective = this.elementDirectives[node.nodeName.toUpperCase()];
+	    if (!ElementDirective) return;
+	    handler.directives.push(this._createDirectiveInstance(ElementDirective, {
+	      handler: handler,
+	      node: node
+	    }));
 	  },
 	
 	  /**
@@ -1681,18 +1469,17 @@
 	   */
 	  _compileAttributes: function /*istanbul ignore next*/_compileAttributes(handler, node) {
 	    utils.toArray(node.attributes).forEach(function (attribute) {
-	      var matchInfo = this._parseMatchInfo(attribute.name, Directive.TYPE_ATTRIBUTE, node);
-	      var attributeDirectives = this._findDirectives(matchInfo);
-	      attributeDirectives.forEach(function (Directive) {
-	        var definition = Directive.definition;
-	        handler.directives.push(this._createDirectiveInstance(Directive, {
-	          handler: handler,
-	          node: node,
-	          attribute: attribute,
-	          expression: definition.literal ? attribute.value : new Expression(attribute.value),
-	          decorates: matchInfo.decorates
-	        }));
-	      }, this);
+	      var attrInfo = this._parseAttrInfo(attribute.name);
+	      var AttrDirective = this.attributeDirectives[attrInfo.name] || this.attributeDirectives['*'];
+	      if (!AttrDirective) return;
+	      var directiveOptions = AttrDirective.options;
+	      handler.directives.push(this._createDirectiveInstance(AttrDirective, {
+	        handler: handler,
+	        node: node,
+	        attribute: attribute,
+	        expression: directiveOptions.literal ? attribute.value : new Expression(attribute.value),
+	        decorates: attrInfo.decorates
+	      }));
 	    }, this);
 	  },
 	
@@ -1705,6 +1492,7 @@
 	  _compileChildren: function /*istanbul ignore next*/_compileChildren(handler, node) {
 	    if (handler.final) return;
 	    utils.toArray(node.childNodes).forEach(function (childNode) {
+	      if (childNode.__compiled) return;
 	      var childHandler = this.compile(childNode);
 	      childHandler.parent = this;
 	      handler.children.push(childHandler);
@@ -1721,6 +1509,7 @@
 	    if (!node) {
 	      throw new Error('Invalid node for compile');
 	    }
+	    node.__compiled = true;
 	    options = options || utils.create(null);
 	    //定义编译结果函数
 	    var handler = function handler(scope) {
@@ -1752,7 +1541,7 @@
 	    this._bindHandler(handler);
 	    if (options.children !== false) this._compileChildren(handler, node);
 	    //返回编译后函数
-	    return handler.bind(null);
+	    return handler;
 	  }
 	
 	});
@@ -1760,136 +1549,80 @@
 	module.exports = Compiler;
 
 /***/ },
-/* 12 */
+/* 10 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
 	var Class = __webpack_require__(4);
 	var utils = __webpack_require__(3);
-	var Expression = __webpack_require__(13);
-	
-	/**
-	 * 指令定义信息类
-	 * 可以通过每一个「指令类」的的「静态成员」访问
-	 * 也可通过「指令实例」的「实例成员」访问
-	 */
-	var DirectiveDefinition = new Class({
-	  $name: 'DirectiveDefinition',
-	
-	  $extends: Directive.prototype,
-	
-	  /**
-	   * 构造一个指令定义信息对象
-	   * @param {Object} options 选项
-	   * @returns {void} 无返回
-	   */
-	  constructor: function /*istanbul ignore next*/constructor(options) {
-	    if (!options || !utils.isString(options.name) || options.name.length < 1) {
-	      throw new Error('Invalid directive options');
-	    }
-	    //拷贝所有成员到当前 definition 实例
-	    this.customTest = options.test;
-	    delete options.test;
-	    utils.copy(this._faultHandle(options), this);
-	  },
-	
-	  /**
-	   * 针对「选项」做容错处理
-	   * @param {Object} options 原姓选项
-	   * @returns {Object} 处理后的选项
-	   */
-	  _faultHandle: function /*istanbul ignore next*/_faultHandle(options) {
-	    options.type = options.type || Directive.TYPE_ATTRIBUTE;
-	    options.level = options.level || Directive.LEVEL_GENERAL;
-	    options.match = options.match || options.name;
-	    if (!(options.match instanceof RegExp)) {
-	      var expr = options.match.replace(/([A-Z])/g, '-$1').toLowerCase();
-	      if (expr[0] == '-') expr = expr.slice(1);
-	      options.match = new RegExp('^' + expr + '$', 'i');
-	    }
-	    if (options.tag && !(options.tag instanceof RegExp)) {
-	      options.tag = new RegExp('^' + options.tag + '$', 'i');
-	    }
-	    return options;
-	  },
-	
-	  /**
-	   * 检查指令是否匹配
-	   * @param {Object} matchInfo 匹配信息
-	   * @returns {boolean} 测试结果
-	   */
-	  test: function /*istanbul ignore next*/test(matchInfo) {
-	    return this.type === matchInfo.type && (!this.tag || matchInfo.node && this.tag.test(matchInfo.node.nodeName)) && (this.prefix === false || matchInfo.prefix === matchInfo.compiler.prefix) && this.match.test(matchInfo.name) && (!this.customTest || this.customTest(matchInfo));
-	  }
-	
-	});
+	var Expression = __webpack_require__(11);
 	
 	/**
 	 * 指令定义工场函数
-	 * @param {Object} options 选项
+	 * @param {Object} classOptions 选项
 	 * @returns {Directive} 指令类
 	 */
-	function Directive(options) {
-	  //创建 definition 实例
-	  var definition = new DirectiveDefinition(options);
+	function Directive(classOptions) {
+	  //处理指令选项
+	  classOptions = classOptions || utils.create(null);
+	  classOptions.type = classOptions.type || Directive.TA;
+	  classOptions.level = classOptions.level || Directive.LG;
+	
 	  //生成指令类
 	  var DirectiveClass = new Class({
 	    $name: 'Directive',
 	
-	    $extends: definition,
+	    $extends: classOptions,
 	    //指令构建函数
 	    constructor: function /*istanbul ignore next*/constructor(instanceOptions) {
 	      utils.copy(instanceOptions, this);
 	    },
-	    //挂载实例上的 definition
-	    definition: definition,
+	    //挂载实例上的 options
+	    options: classOptions,
 	    //挂载实例核心方法
-	    bind: options.bind || utils.noop,
-	    execute: options.execute || function (scope) {
+	    bind: classOptions.bind || utils.noop,
+	    execute: classOptions.execute || function (scope) {
 	      this.scope = scope;
-	      if (this.definition.type === Directive.TYPE_ELEMENT) {
+	      if (this.options.type === Directive.TE) {
 	        return this.update();
 	      }
-	      var newValue = this.definition.literal ? this.attribute.value : this.expression.execute(scope);
+	      var newValue = this.options.literal ? this.attribute.value : this.expression.execute(scope);
 	      if (!utils.deepEqual(this.__value__, newValue)) {
 	        this.update(newValue, this.__value__);
 	        this.__value__ = newValue;
 	      }
 	    },
-	    update: options.update || utils.noop,
-	    unbind: options.unbind || utils.noop,
+	    update: classOptions.update || utils.noop,
+	    unbind: classOptions.unbind || utils.noop,
 	    //挂载指令常用的类型
 	    utils: utils,
 	    Expression: Expression
 	  });
 	  //向指令类添加「指令定义信息」
-	  DirectiveClass.definition = definition;
-	  DirectiveClass.__proto__ = definition;
+	  DirectiveClass.options = classOptions;
+	  DirectiveClass.__proto__ = classOptions;
 	  return DirectiveClass;
 	}
 	
-	//挂载指令定义信息类
-	Directive.Definition = DirectiveDefinition;
-	
 	//指令类型
-	Directive.TYPE_ATTRIBUTE = 'attribute';
-	Directive.TYPE_ELEMENT = 'element';
+	Directive.TA = 'A';
+	Directive.TE = 'E';
 	
 	//指令级别
-	Directive.LEVEL_PREVENT = 3000;
-	Directive.LEVEL_STATEMENT = 2000;
-	Directive.LEVEL_ELEMENT = 1000;
-	Directive.LEVEL_GENERAL = 0;
-	Directive.LEVEL_ATTRIBUTE = -1000;
-	Directive.LEVEL_CLOAK = -2000;
+	Directive.LP = 3000; //prevent
+	Directive.LS = 2000; //statement
+	Directive.LE = 1000; //eleemtn
+	Directive.LG = 0; //general
+	Directive.LA = -1000; //any attribute
+	Directive.LC = -2000; //cloak
 	
 	utils.defineFreezeProp(Directive, 'name', 'Directive');
 	
 	module.exports = Directive;
 
 /***/ },
-/* 13 */
+/* 11 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
@@ -2030,29 +1763,40 @@
 	module.exports = Expression;
 
 /***/ },
-/* 14 */
+/* 12 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	module.exports = [__webpack_require__(15), __webpack_require__(16), __webpack_require__(17), __webpack_require__(18), __webpack_require__(19), __webpack_require__(20), __webpack_require__(21), __webpack_require__(22), __webpack_require__(23), __webpack_require__(24), __webpack_require__(25), __webpack_require__(26), __webpack_require__(27), __webpack_require__(28), __webpack_require__(29), __webpack_require__(30), __webpack_require__(31), __webpack_require__(32)];
+	module.exports = {
+	  '#text': __webpack_require__(13),
+	  'each': __webpack_require__(14),
+	  'if': __webpack_require__(15),
+	  'prop': __webpack_require__(16),
+	  'attr': __webpack_require__(17),
+	  'on': __webpack_require__(18),
+	  'html': __webpack_require__(19),
+	  'text': __webpack_require__(20),
+	  'prevent': __webpack_require__(21),
+	  'id': __webpack_require__(22),
+	  'cloak': __webpack_require__(23),
+	  'show': __webpack_require__(24),
+	  'model': __webpack_require__(25),
+	  '*': __webpack_require__(31) //处理所有未知 attr
+	};
 
 /***/ },
-/* 15 */
+/* 13 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
-	var Expression = __webpack_require__(13);
+	var Directive = __webpack_require__(10);
+	var Expression = __webpack_require__(11);
 	
 	module.exports = new Directive({
-	  name: '#text',
-	  type: Directive.TYPE_ELEMENT,
+	  type: Directive.TE,
 	  prefix: false,
-	  test: function /*istanbul ignore next*/test(matchInfo) {
-	    return matchInfo.node.nodeValue.trim().length > 4;
-	  },
 	
 	  /**
 	   * 初始化指令
@@ -2074,71 +1818,15 @@
 	});
 
 /***/ },
-/* 16 */
+/* 14 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
-	
-	/**
-	 * 通用的 attribute 指令
-	 * 用于所有 attribute 的处理
-	 * 例如:
-	 *  <div attr1="{{expr1}}" {{expr2}} {{attr3}}="{{expr3}}">
-	 *  </div>
-	 */
-	module.exports = new Directive({
-	  name: 'attribute',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_ATTRIBUTE,
-	  prefix: false,
-	  literal: true,
-	  remove: false,
-	  match: /[\s\S]/i,
-	
-	  /**
-	   * 初始化指令
-	   * @returns {void} 无返回
-	   */
-	  bind: function /*istanbul ignore next*/bind() {
-	    this.computedName = this.attribute.name;
-	    this.computedValue = this.attribute.value;
-	    this.nameExpr = new this.Expression(this.attribute.name, true);
-	    this.valueExpr = new this.Expression(this.attribute.value, true);
-	  },
-	
-	  execute: function /*istanbul ignore next*/execute(scope) {
-	    var newComputedName = this.nameExpr.execute(scope);
-	    if (this.computedName !== newComputedName) {
-	      this.node.removeAttribute(this.computedName);
-	      this.computedName = newComputedName;
-	      if (!this.utils.isNull(this.computedName) && this.computedName.length > 0) {
-	        this.node.setAttribute(this.computedName, '');
-	      }
-	    }
-	    var newComputeValue = this.valueExpr.execute(scope);
-	    newComputeValue = this.utils.isNull(newComputeValue) ? '' : newComputeValue;
-	    if (this.computedValue !== newComputeValue) {
-	      this.computedValue = newComputeValue;
-	      this.node.setAttribute(this.computedName, this.computedValue);
-	    }
-	  }
-	
-	});
-
-/***/ },
-/* 17 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'each',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_STATEMENT,
+	  level: Directive.LS,
 	  final: true,
 	  literal: true,
 	
@@ -2207,17 +1895,15 @@
 	});
 
 /***/ },
-/* 18 */
+/* 15 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'if',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_STATEMENT,
+	  level: Directive.LS,
 	  final: true,
 	
 	  /**
@@ -2241,7 +1927,7 @@
 	    if (newValue) {
 	      //如果新计算的结果为 true 才执行 
 	      this._handler(scope);
-	      if (!this._oldValue) {
+	      if (!node.parentNode) {
 	        this.mountNode.parentNode.insertBefore(node, this.mountNode);
 	      }
 	    } else if (this._oldValue && node.parentNode) {
@@ -2253,57 +1939,47 @@
 	});
 
 /***/ },
-/* 19 */
+/* 16 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'prop',
-	  type: Directive.TYPE_ATTRIBUTE,
-	
 	  update: function /*istanbul ignore next*/update(value) {
 	    var target = this.node.$target || this.node;
 	    target[this.decorates[0]] = value;
 	  }
-	
 	});
 
 /***/ },
-/* 20 */
+/* 17 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'attr',
-	  type: Directive.TYPE_ATTRIBUTE,
-	
 	  update: function /*istanbul ignore next*/update(value) {
 	    var target = this.node.$target || this.node;
 	    if (target && target.setAttribute) {
 	      target.setAttribute(this.decorates[0], value);
 	    }
 	  }
-	
 	});
 
 /***/ },
-/* 21 */
+/* 18 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	var EventEmitter = __webpack_require__(7);
 	
 	module.exports = new Directive({
-	  name: 'on',
-	  type: Directive.TYPE_ATTRIBUTE,
 	  literal: true,
 	
 	  /**
@@ -2337,67 +2013,55 @@
 	});
 
 /***/ },
+/* 19 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/*istanbul ignore next*/'use strict';
+	
+	var Directive = __webpack_require__(10);
+	
+	module.exports = new Directive({
+	  update: function /*istanbul ignore next*/update(newValue) {
+	    this.node.innerHTML = newValue;
+	  }
+	});
+
+/***/ },
+/* 20 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/*istanbul ignore next*/'use strict';
+	
+	var Directive = __webpack_require__(10);
+	
+	module.exports = new Directive({
+	  update: function /*istanbul ignore next*/update(newValue) {
+	    this.node.innerText = newValue;
+	  }
+	});
+
+/***/ },
+/* 21 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/*istanbul ignore next*/'use strict';
+	
+	var Directive = __webpack_require__(10);
+	
+	module.exports = new Directive({
+	  level: Directive.LP,
+	  final: true
+	});
+
+/***/ },
 /* 22 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'html',
-	  type: Directive.TYPE_ATTRIBUTE,
-	
-	  update: function /*istanbul ignore next*/update(newValue) {
-	    this.node.innerHTML = newValue;
-	  }
-	
-	});
-
-/***/ },
-/* 23 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Directive = __webpack_require__(12);
-	
-	module.exports = new Directive({
-	  name: 'text',
-	  type: Directive.TYPE_ATTRIBUTE,
-	
-	  update: function /*istanbul ignore next*/update(newValue) {
-	    this.node.innerText = newValue;
-	  }
-	
-	});
-
-/***/ },
-/* 24 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Directive = __webpack_require__(12);
-	
-	module.exports = new Directive({
-	  name: 'prevent',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_PREVENT,
-	  final: true
-	});
-
-/***/ },
-/* 25 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Directive = __webpack_require__(12);
-	
-	module.exports = new Directive({
-	  name: 'id',
-	  type: Directive.TYPE_ATTRIBUTE,
 	  literal: true,
 	
 	  update: function /*istanbul ignore next*/update(id) {
@@ -2410,17 +2074,15 @@
 	});
 
 /***/ },
-/* 26 */
+/* 23 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'cloak',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_CLOAK,
+	  level: Directive.LC,
 	  literal: true,
 	  prefix: false,
 	
@@ -2431,83 +2093,70 @@
 	});
 
 /***/ },
-/* 27 */
+/* 24 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	
 	module.exports = new Directive({
-	  name: 'show',
-	  type: Directive.TYPE_ATTRIBUTE,
-	
 	  update: function /*istanbul ignore next*/update(value) {
 	    this.node.style.display = value ? '' : 'none';
 	  }
-	
 	});
 
 /***/ },
-/* 28 */
+/* 25 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
-	var EventEmitter = __webpack_require__(7);
+	var SelectDirective = __webpack_require__(26);
+	var EditableDirective = __webpack_require__(27);
+	var InputDirective = __webpack_require__(28);
+	var RadioDirective = __webpack_require__(29);
+	var CheckboxDirective = __webpack_require__(30);
 	
-	module.exports = new Directive({
-	  name: 'model',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_ATTRIBUTE,
-	  tag: /^(input|textarea)$/i,
-	  test: function /*istanbul ignore next*/test(matchInfo) {
-	    var inputType = matchInfo.node.getAttribute('type');
-	    return inputType !== 'radio' && inputType !== 'checkbox';
-	  },
-	
-	  /**
-	   * 初始化指令
-	   * @returns {void} 无返回
-	   */
-	  bind: function /*istanbul ignore next*/bind() {
-	    this.bindPath = this.attribute.value;
-	    this.emiter = new EventEmitter(this.node);
-	    this.emiter.addListener('input', function () {
-	      if (this.utils.isNull(this.scope)) return;
-	      this.utils.setByPath(this.scope, this.bindPath, this.node.value);
-	    }.bind(this), false);
-	  },
-	
-	  unbind: function /*istanbul ignore next*/unbind() {
-	    this.emiter.removeListener();
-	  },
-	
-	  execute: function /*istanbul ignore next*/execute(scope) {
-	    var value = this.expression.execute(scope);
-	    if (this.node.value !== value) {
-	      this.node.value = value;
+	var Directive = function Directive(options) {
+	  var node = options.node;
+	  var tagName = node.tagName;
+	  if (tagName == 'INPUT') {
+	    var type = node.getAttribute('type');
+	    if (type == 'radio') {
+	      return new RadioDirective(options);
+	    } else if (type == 'checkbox') {
+	      return new CheckboxDirective(options);
+	    } else {
+	      return new InputDirective(options);
 	    }
+	  } else if (tagName == 'SELECT') {
+	    return new SelectDirective(options);
+	  } else if (node.isContentEditable) {
+	    return new EditableDirective(options);
+	  } else {
+	    throw new Error( /*istanbul ignore next*/'Directive cannot be used on `' + tagName + '`');
 	  }
+	};
 	
-	});
+	//手动添加 classOptions
+	Directive.options = {
+	  level: Directive.LA
+	};
+	
+	module.exports = Directive;
 
 /***/ },
-/* 29 */
+/* 26 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	var EventEmitter = __webpack_require__(7);
 	
 	module.exports = new Directive({
-	  name: 'model',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_ATTRIBUTE,
 	  final: true,
-	  tag: 'select',
 	
 	  /**
 	   * 初始化指令
@@ -2545,24 +2194,89 @@
 	});
 
 /***/ },
-/* 30 */
+/* 27 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	var EventEmitter = __webpack_require__(7);
 	
 	module.exports = new Directive({
-	  name: 'model',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_ATTRIBUTE,
-	  tag: 'input',
-	  test: function /*istanbul ignore next*/test(matchInfo) {
-	    var inputType = matchInfo.node.getAttribute('type');
-	    return inputType === 'radio';
+	
+	  /**
+	   * 初始化指令
+	   * @returns {void} 无返回
+	   */
+	  bind: function /*istanbul ignore next*/bind() {
+	    this.bindPath = this.attribute.value;
+	    this.emiter = new EventEmitter(this.node);
+	    this.emiter.addListener('input', function () {
+	      if (this.utils.isNull(this.scope)) return;
+	      this.utils.setByPath(this.scope, this.bindPath, this.node.innerHTML);
+	    }.bind(this), false);
 	  },
 	
+	  unbind: function /*istanbul ignore next*/unbind() {
+	    this.emiter.removeListener();
+	  },
+	
+	  execute: function /*istanbul ignore next*/execute(scope) {
+	    var value = this.expression.execute(scope);
+	    if (this.node.innerHTML !== value) {
+	      this.node.innerHTML = value;
+	    }
+	  }
+	
+	});
+
+/***/ },
+/* 28 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/*istanbul ignore next*/'use strict';
+	
+	var Directive = __webpack_require__(10);
+	var EventEmitter = __webpack_require__(7);
+	
+	module.exports = new Directive({
+	
+	  /**
+	   * 初始化指令
+	   * @returns {void} 无返回
+	   */
+	  bind: function /*istanbul ignore next*/bind() {
+	    this.bindPath = this.attribute.value;
+	    this.emiter = new EventEmitter(this.node);
+	    this.emiter.addListener('input', function () {
+	      if (this.utils.isNull(this.scope)) return;
+	      this.utils.setByPath(this.scope, this.bindPath, this.node.value);
+	    }.bind(this), false);
+	  },
+	
+	  unbind: function /*istanbul ignore next*/unbind() {
+	    this.emiter.removeListener();
+	  },
+	
+	  execute: function /*istanbul ignore next*/execute(scope) {
+	    var value = this.expression.execute(scope);
+	    if (this.node.value !== value) {
+	      this.node.value = value;
+	    }
+	  }
+	
+	});
+
+/***/ },
+/* 29 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/*istanbul ignore next*/'use strict';
+	
+	var Directive = __webpack_require__(10);
+	var EventEmitter = __webpack_require__(7);
+	
+	module.exports = new Directive({
 	  /**
 	   * 初始化指令
 	   * @returns {void} 无返回
@@ -2589,24 +2303,15 @@
 	});
 
 /***/ },
-/* 31 */
+/* 30 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
+	var Directive = __webpack_require__(10);
 	var EventEmitter = __webpack_require__(7);
 	
 	module.exports = new Directive({
-	  name: 'model',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_ATTRIBUTE,
-	  tag: 'input',
-	
-	  test: function /*istanbul ignore next*/test(matchInfo) {
-	    var inputType = matchInfo.node.getAttribute('type');
-	    return inputType === 'checkbox';
-	  },
 	
 	  /**
 	   * 初始化指令
@@ -2646,50 +2351,58 @@
 	});
 
 /***/ },
-/* 32 */
+/* 31 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Directive = __webpack_require__(12);
-	var EventEmitter = __webpack_require__(7);
+	var Directive = __webpack_require__(10);
 	
+	/**
+	 * 通用的 attribute 指令
+	 * 用于所有 attribute 的处理
+	 * 例如:
+	 *  <div attr1="{{expr1}}" {{expr2}} {{attr3}}="{{expr3}}">
+	 *  </div>
+	 */
 	module.exports = new Directive({
-	  name: 'model',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  level: Directive.LEVEL_ATTRIBUTE,
-	  test: function /*istanbul ignore next*/test(matchInfo) {
-	    return matchInfo.node.isContentEditable;
-	  },
+	  level: Directive.LA,
+	  prefix: false,
+	  literal: true,
+	  remove: false,
 	
 	  /**
 	   * 初始化指令
 	   * @returns {void} 无返回
 	   */
 	  bind: function /*istanbul ignore next*/bind() {
-	    this.bindPath = this.attribute.value;
-	    this.emiter = new EventEmitter(this.node);
-	    this.emiter.addListener('input', function () {
-	      if (this.utils.isNull(this.scope)) return;
-	      this.utils.setByPath(this.scope, this.bindPath, this.node.innerHTML);
-	    }.bind(this), false);
-	  },
-	
-	  unbind: function /*istanbul ignore next*/unbind() {
-	    this.emiter.removeListener();
+	    this.computedName = this.attribute.name;
+	    this.computedValue = this.attribute.value;
+	    this.nameExpr = new this.Expression(this.attribute.name, true);
+	    this.valueExpr = new this.Expression(this.attribute.value, true);
 	  },
 	
 	  execute: function /*istanbul ignore next*/execute(scope) {
-	    var value = this.expression.execute(scope);
-	    if (this.node.innerHTML !== value) {
-	      this.node.innerHTML = value;
+	    var newComputedName = this.nameExpr.execute(scope);
+	    if (this.computedName !== newComputedName) {
+	      this.node.removeAttribute(this.computedName);
+	      this.computedName = newComputedName;
+	      if (!this.utils.isNull(this.computedName) && this.computedName.length > 0) {
+	        this.node.setAttribute(this.computedName, '');
+	      }
+	    }
+	    var newComputeValue = this.valueExpr.execute(scope);
+	    newComputeValue = this.utils.isNull(newComputeValue) ? '' : newComputeValue;
+	    if (this.computedValue !== newComputeValue) {
+	      this.computedValue = newComputeValue;
+	      this.node.setAttribute(this.computedName, this.computedValue);
 	    }
 	  }
 	
 	});
 
 /***/ },
-/* 33 */
+/* 32 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
@@ -2697,7 +2410,7 @@
 	var Class = __webpack_require__(4);
 	var Observer = __webpack_require__(6);
 	var EventEmitter = __webpack_require__(7);
-	var Compiler = __webpack_require__(11);
+	var Compiler = __webpack_require__(9);
 	var utils = __webpack_require__(3);
 	
 	/**
@@ -2804,13 +2517,14 @@
 	module.exports = Template;
 
 /***/ },
-/* 34 */
+/* 33 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Component = __webpack_require__(35);
-	var components = __webpack_require__(37);
+	var Component = __webpack_require__(34);
+	var components = __webpack_require__(36);
+	var directives = __webpack_require__(8).directives;
 	
 	Component.components = components;
 	Component.Component = Component;
@@ -2820,23 +2534,28 @@
 	  components[name] = component;
 	};
 	
+	Component.directive = function (name, directive) {
+	  if (!directive) return directives[name];
+	  directives[name] = directive;
+	};
+	
 	module.exports = Component;
 
 /***/ },
-/* 35 */
+/* 34 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
 	var Class = __webpack_require__(4);
-	var Template = __webpack_require__(10);
+	var Template = __webpack_require__(8);
 	var Watcher = __webpack_require__(5);
 	var utils = __webpack_require__(3);
 	var EventEmitter = __webpack_require__(7);
 	var Observer = __webpack_require__(6);
-	var ComponentDirective = __webpack_require__(36);
+	var ComponentDirective = __webpack_require__(35);
 	
-	var RESERVED_WORDS = ['$compile', '$data', '$dispose', '$element', '$mount', '$properties', '$remove', '$watch', '_callHook', '_compiled', '_createData', '_createProperties', '_createWatches', '$extends', '_mounted', '_observer', '_onTemplateUpdate', '_removed', '_template', '_watchers', '$children', '$parent', '_directives', '_importComponents', '$nextTick', '_isElement', '_listeners', '__emitter__', '__observer__', '_target', '$on', '$off', '$emit', '$dispatch'];
+	var RESERVED_WORDS = ['$compile', '$data', '$dispose', '$element', '$mount', '$properties', '$remove', '$watch', '$callHook', '_compiled', '_createData', '_createProperties', '_createWatches', '$extends', '_mounted', '_observer', '_onTemplateUpdate', '_removed', '_template', '_watchers', '$children', '$parent', '$root', '$directives', '_importComponents', '$nextTick', '_isElement', '_listeners', '__emitter__', '__observer__', '_target', '$on', '$off', '$emit', '$dispatch', '_createElement', '_created'];
 	
 	/**
 	 * 组件类
@@ -2864,7 +2583,7 @@
 	  var mixedClassOpts = {};
 	  mixObjects.forEach(function (mixObject) {
 	    if (mixObject instanceof Component || mixObject == Component) {
-	      mixObject = mixObject._options || {};
+	      mixObject = mixObject.$options || {};
 	    }
 	    utils.mix(mixedClassOpts, mixObject);
 	  });
@@ -2887,8 +2606,7 @@
 	        return new this.$class(instanceOpts);
 	      }
 	      EventEmitter.call(this);
-	      instanceOpts = instanceOpts || {};
-	      utils.copy(instanceOpts, this);
+	      utils.copy(instanceOpts || {}, this);
 	      this._onTemplateUpdate = this._onTemplateUpdate.bind(this);
 	      this._createData(this.data);
 	      delete this.data;
@@ -2896,17 +2614,21 @@
 	      delete this.properties;
 	      this._createWatches(this.watches);
 	      delete this.watches;
-	      this._importComponents(__webpack_require__(37));
+	      this.$directives = this.$directives || utils.create(null);
+	      this._importDirectives(this.directives);
+	      this.$components = this.$components || utils.create(null);
+	      this._importComponents(__webpack_require__(36));
 	      this._importComponents(this.components);
 	      delete this.components;
 	      utils.defineFreezeProp(this, '$children', []);
-	      if (instanceOpts.parent) {
-	        this.$setParent(instanceOpts.parent);
-	      }
-	      this._callHook('onInit');
+	      if (this.parent) this.$setParent(this.parent);
+	      this.$callHook('onInit');
 	      this._observer = Observer.observe(this);
-	      this.$compile();
-	      this._mounted = !!this.element;
+	      if (this.element) {
+	        this.$mount();
+	      } else {
+	        this.$compile();
+	      }
 	    },
 	
 	    /**
@@ -2936,6 +2658,17 @@
 	    },
 	
 	    /**
+	     * 获取根组件
+	     */
+	    get $root() {
+	      if (this.$parent) {
+	        return this.$parent.$root;
+	      } else {
+	        return this;
+	      }
+	    },
+	
+	    /**
 	     * 移除子组件
 	     * @param {Object} child 子组件
 	     * @returns {void} 无返回
@@ -2952,24 +2685,25 @@
 	     * @returns {void} 无返回
 	     */
 	    _importComponents: function /*istanbul ignore next*/_importComponents(components) {
-	      utils.each(components, this._importComponent, this);
+	      utils.each(components, function (name, component) {
+	        this.$components[name] = component;
+	        this.$directives[name] = new ComponentDirective({
+	          name: name,
+	          component: component,
+	          parent: this
+	        });
+	      }, this);
 	    },
 	
 	    /**
-	     * 导入一个用到的子组件类
-	     * @param {string} name 组件类名
-	     * @param {Object} component 引入的组件
+	     * 导入一个用到的指令
+	     * @param {Object} directives 引入的指令
 	     * @returns {void} 无返回
 	     */
-	    _importComponent: function /*istanbul ignore next*/_importComponent(name, component) {
-	      this.$components = this.$components || {};
-	      this.$components[name] = component;
-	      this._directives = this._directives || [];
-	      this._directives.push(new ComponentDirective({
-	        name: name,
-	        component: component,
-	        parent: this
-	      }));
+	    _importDirectives: function /*istanbul ignore next*/_importDirectives(directives) {
+	      utils.each(directives, function (name, directive) {
+	        this.$directives[name] = directive;
+	      }, this);
 	    },
 	
 	    /**
@@ -2978,7 +2712,7 @@
 	     * @param {Array} args 调用 hook 的参数列表
 	     * @returns {void} 无反回
 	     */
-	    _callHook: function /*istanbul ignore next*/_callHook(name, args) {
+	    $callHook: function /*istanbul ignore next*/$callHook(name, args) {
 	      if (!utils.isFunction(this[name])) return;
 	      this[name].apply(this, args);
 	    },
@@ -3104,26 +2838,36 @@
 	    },
 	
 	    /**
+	     * 创建元素
+	     * @returns {void} 无返回
+	     */
+	    _createElement: function /*istanbul ignore next*/_createElement() {
+	      if (this._created) return;
+	      this._created = true;
+	      this.$callHook('onCreate');
+	      utils.defineFreezeProp(this, '$element', this.element || ComponentClass.$template.cloneNode(true));
+	      if (!this.$element || this.$element.nodeName === '#text') {
+	        throw new Error('Invalid component template');
+	      }
+	      this.$callHook('onCreated');
+	    },
+	
+	    /**
 	     * 编译自身模板并完成绑定
 	     * @returns {void} 无返回
 	     */
 	    $compile: function /*istanbul ignore next*/$compile() {
 	      if (this._compiled) return;
 	      this._compiled = true;
-	      this._callHook('onCreate');
-	      utils.defineFreezeProp(this, '$element', this.element || utils.parseDom(this.template)[0]);
-	      if (!this.$element || this.$element.nodeName === '#text') {
-	        throw new Error('Invalid component template');
-	      }
-	      this._callHook('onCreated');
+	      this._createElement();
 	      utils.defineFreezeProp(this, '_template', new Template(this.$element, {
-	        directives: this._directives,
+	        directives: this.$directives,
 	        root: true
 	      }));
 	      this._template.bind(this);
 	      this._template.on('update', this._onTemplateUpdate);
 	      this._template.on('bind', function () {
-	        this._callHook('onReady');
+	        if (!this.deferReady) this.$callHook('onReady');
 	      }.bind(this));
 	    },
 	
@@ -3134,18 +2878,30 @@
 	     * @returns {void} 无返回 
 	     */
 	    $mount: function /*istanbul ignore next*/$mount(mountNode, append) {
-	      if (!mountNode || this._mounted) return;
-	      this._callHook('onMount');
-	      mountNode.$substitute = this.$element;
-	      this.$element._mountNode = mountNode;
-	      if (append) {
-	        mountNode.appendChild(this.$element);
-	      } else if (mountNode.parentNode) {
-	        mountNode.parentNode.insertBefore(this.$element, mountNode);
+	      if (this._mounted) return;
+	      this.$compile();
+	      this.$callHook('onMount');
+	      if (mountNode) {
+	        mountNode.$substitute = this.$element;
+	        this.$element._mountNode = mountNode;
+	        if (append) {
+	          mountNode.appendChild(this.$element);
+	        } else if (mountNode.parentNode) {
+	          mountNode.parentNode.insertBefore(this.$element, mountNode);
+	        }
 	      }
 	      this._mounted = true;
 	      this._removed = false;
-	      this._callHook('onMounted');
+	      this.$callHook('onMounted');
+	    },
+	
+	    /**
+	     * 将组件添加到指定容器元素内
+	     * @param {HTMLNode} node 容器元素
+	     * @returns {void} 无返回 
+	     */
+	    $appendTo: function /*istanbul ignore next*/$appendTo(node) {
+	      this.$mount(node, true);
 	    },
 	
 	    /**
@@ -3154,13 +2910,13 @@
 	     */
 	    $remove: function /*istanbul ignore next*/$remove() {
 	      if (this._removed || !this._mounted) return;
-	      this._callHook('onRemove');
+	      this.$callHook('onRemove');
 	      if (this.$element.parentNode) {
 	        this.$element.parentNode.removeChild(this.$element);
 	      }
 	      this._removed = true;
 	      this._mounted = false;
-	      this._callHook('onRemoved');
+	      this.$callHook('onRemoved');
 	    },
 	
 	    /**
@@ -3170,9 +2926,24 @@
 	     * @returns {void} 无返回
 	     */
 	    $dispatch: function /*istanbul ignore next*/$dispatch(name, data) {
-	      var stopBubble = this.$emit(name, data);
-	      if (this.$parent && !stopBubble) {
+	      var stopPropagation = this.$emit(name, data);
+	      if (!stopPropagation && this.$parent) {
 	        this.$parent.$dispatch(name, data);
+	      }
+	    },
+	
+	    /**
+	     * 触发自身的一个事件并向下广播
+	     * @param {string} name 事件名称
+	     * @param {object} data 传递的对象
+	     * @returns {void} 无返回
+	     */
+	    $broadcast: function /*istanbul ignore next*/$broadcast(name, data) {
+	      var stopPropagation = this.$emit(name, data);
+	      if (!stopPropagation && this.$children && this.$children.length > 0) {
+	        this.$children.forEach(function (child) {
+	          child.$broadcast(name, data);
+	        }, this);
 	      }
 	    },
 	
@@ -3190,11 +2961,11 @@
 	        var index = this.$parent.$children.indexOf(this);
 	        this.$parent.$children.splice(index, 1);
 	      }
-	      this._callHook('onDispose');
+	      this.$callHook('onDispose');
 	      if (this._compiled) {
 	        this._template.unbind();
 	      }
-	      this._callHook('onDisposed');
+	      this.$callHook('onDisposed');
 	      for (var key in this) {
 	        delete this[key];
 	      }
@@ -3207,7 +2978,11 @@
 	  });
 	
 	  //保存类选项
-	  ComponentClass._options = classOpts;
+	  ComponentClass.$options = classOpts;
+	  ComponentClass.$template = utils.parseDom(classOpts.template)[0];
+	  if (ComponentClass.$template && ComponentClass.$template.normalize) {
+	    ComponentClass.$template.normalize();
+	  }
 	
 	  //向 ComponentClass.prototype 上拷贝成员
 	  utils.copy(classOpts, ComponentClass.prototype, RESERVED_WORDS, 'Name `{name}` is reserved');
@@ -3240,21 +3015,21 @@
 	
 	//针对包括 element 组件类的启动方法
 	Component.prototype.start = function (instanceOpts) {
-	  if (!this._options || !this._options.element) {
+	  if (!this.$options || !this.$options.element) {
 	    throw new Error('Start method cannot be called');
 	  }
-	  return this.create(instanceOpts);
+	  this.create(instanceOpts);
 	};
 	
 	module.exports = Component;
 
 /***/ },
-/* 36 */
+/* 35 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Template = __webpack_require__(10);
+	var Template = __webpack_require__(8);
 	var Directive = Template.Directive;
 	
 	/**
@@ -3268,14 +3043,14 @@
 	  var parent = options.parent;
 	
 	  return new Directive({
-	    name: options.name,
-	    type: Directive.TYPE_ELEMENT,
+	    type: Directive.TE,
 	    literal: true,
 	    final: true,
-	    level: Directive.LEVEL_ELEMENT,
+	    level: Directive.LE,
 	
 	    bind: function /*istanbul ignore next*/bind() {
 	      this.component = new Component({
+	        deferReady: true,
 	        parent: options.parent || this.scope
 	      });
 	      this.node.$target = this.component;
@@ -3283,7 +3058,6 @@
 	        element: false,
 	        children: false
 	      });
-	      //this.handleId();
 	      this.handleAttrs();
 	      this.handleContents();
 	      this.component.$mount(this.node);
@@ -3340,6 +3114,10 @@
 	
 	    execute: function /*istanbul ignore next*/execute(scope) {
 	      this.handler(scope);
+	      if (!this._ready) {
+	        this._ready = true;
+	        this.component.$callHook('onReady');
+	      }
 	      this.placeHandlers.forEach(function (handler) {
 	        handler(scope);
 	      }, this);
@@ -3351,22 +3129,22 @@
 	module.exports = ComponentDirective;
 
 /***/ },
-/* 37 */
+/* 36 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
 	module.exports = {
-	  View: __webpack_require__(38)
+	  View: __webpack_require__(37)
 	};
 
 /***/ },
-/* 38 */
+/* 37 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*istanbul ignore next*/'use strict';
 	
-	var Component = __webpack_require__(35);
+	var Component = __webpack_require__(34);
 	var utils = __webpack_require__(3);
 	
 	/**
@@ -3414,9 +3192,12 @@
 	        //通过转场控制器进行转场准备
 	        this.transition.prep(newComponentInstance, oldComponentInstance);
 	        //挂载新组件实例
-	        newComponentInstance.$mount(this.$element, true);
+	        newComponentInstance.$appendTo(this.$element);
 	        //通过转场控制器进行转场
 	        this.transition.go(newComponentInstance, oldComponentInstance, function () {
+	          //触发相关事件
+	          this.$emit('enter', newComponentInstance);
+	          this.$emit('leave', oldComponentInstance);
 	          //销毁旧组件实例
 	          if (oldComponentInstance) {
 	            oldComponentInstance.$dispose();
@@ -3500,607 +3281,6 @@
 	};
 	
 	module.exports = View;
-
-/***/ },
-/* 39 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var utils = __webpack_require__(3);
-	var Class = __webpack_require__(4);
-	var RouterBase = __webpack_require__(40);
-	var HashDirver = __webpack_require__(41);
-	var RouterView = __webpack_require__(42);
-	var LinkDirective = __webpack_require__(43);
-	var Component = __webpack_require__(34);
-	
-	var ROOT_PATH = '/';
-	
-	var Router = new Class({
-	  $name: 'Router',
-	  $extends: RouterBase,
-	
-	  /**
-	   * 路由类构造函数
-	   * @param {Object} options 选项
-	   * @returns {void} 无返回
-	   */
-	  constructor: function /*istanbul ignore next*/constructor(options) {
-	    this.$super();
-	    options = options || utils.create(null);
-	    if (options.view) this.view = options.view;
-	    this.dirvier = options.dirvier || new HashDirver(this);
-	    this.dirvier.on('changed', this._onChanged.bind(this));
-	  },
-	
-	  /**
-	   *「路由视组」访问器
-	   * @returns {RouterView} 路由视图组件实例
-	   */
-	  get view() {
-	    return this._view;
-	  },
-	
-	  /**
-	   *「路由视组」设置器
-	   * @param {RouterView} view 路由视图组件实例
-	   * @returns {void} 无返回
-	   */
-	  set view(view) {
-	    if (!(view instanceof RouterView)) {
-	      throw new Error('Invalid RouterView');
-	    }
-	    this._view = view;
-	    this._view._router = this;
-	    this._onChanged(this.dirvier.get());
-	  },
-	
-	  /**
-	   * 路由发生变化时的处理函数
-	   * @param {string} path 将要转到的路径
-	   * @returns {void} 无返回
-	   */
-	  _onChanged: function /*istanbul ignore next*/_onChanged(path) {
-	    path = path || '/';
-	    var routes = this.get(path.split('?')[0]);
-	    if (!routes || routes.length < 1) return;
-	    this.route = routes[0];
-	    this.route.path = path;
-	    this.route.query = this.parseQuery();
-	    if (this.view) {
-	      this.view.component = this.route.component;
-	    }
-	  },
-	
-	  /**
-	   * 转到一个路径
-	   * @param {string} path 将要转到的路径
-	   * @returns {void} 无返回
-	   */
-	  go: function /*istanbul ignore next*/go(path) {
-	    this.dirvier.set(path);
-	  },
-	
-	  /**
-	   * 映射路由配置
-	   * @param {Object} map 路由配置
-	   * @returns {void} 无返回
-	   */
-	  map: function /*istanbul ignore next*/map(_map) {
-	    utils.each(_map, function (pattern, item) {
-	      if (utils.isString(item)) {
-	        item = _map[item];
-	      }
-	      if (item instanceof Component) {
-	        item = { component: item };
-	      }
-	      if (!item) throw new Error('Invalid route `' + pattern + '`');
-	      item.pattern = pattern;
-	      this.addOne(item);
-	    }, this);
-	  },
-	
-	  /**
-	   * 解析相对路径
-	   * @param {string} toUri 原始路径
-	   * @param {string} fromUri 参数路径
-	   * @returns {string} 解析后的相关路径
-	   */
-	  resolveUri: function /*istanbul ignore next*/resolveUri(toUri, fromUri) {
-	    toUri = toUri || ROOT_PATH;
-	    if (toUri[0] == ROOT_PATH) return toUri;
-	    fromUri = fromUri || ROOT_PATH;
-	    fromUri = fromUri.split('?')[0].split('#')[0];
-	    var baseDir = fromUri.substring(0, fromUri.lastIndexOf(ROOT_PATH));
-	    var uriParts = toUri.split('#')[0].split(ROOT_PATH);
-	    var uriHash = toUri.split('#')[1];
-	    var newUriParts = baseDir.length > 0 ? baseDir.split(ROOT_PATH) : [];
-	    uriParts.forEach(function (part) {
-	      if (part == '..') {
-	        newUriParts.pop();
-	      } else if (part && part != '.') {
-	        newUriParts.push(part);
-	      }
-	    }, this);
-	    return ROOT_PATH + newUriParts.join(ROOT_PATH) + (uriHash ? '#' + uriHash : '');
-	  },
-	
-	  /**
-	   * 解析查询字符串并生成查询参数对象
-	   * @returns {Object} 查询参数对象
-	   */
-	  parseQuery: function /*istanbul ignore next*/parseQuery() {
-	    var queryString = (location.href.split('#')[1] || '').split('?')[1] || '';
-	    var pairs = queryString.split('&');
-	    var query = utils.create(null);
-	    pairs.forEach(function (pair) {
-	      var strs = pair.split('=');
-	      query[strs[0]] = strs[1];
-	    }, this);
-	    return query;
-	  },
-	
-	  /**
-	   * 启动应用
-	   * @param {Component} root 应用根组件类
-	   * @param {element} element 挂载元素
-	   * @returns {Component} 应用根件实例
-	   */
-	  start: function /*istanbul ignore next*/start(root, element) {
-	    this.app = new root({
-	      _router: this
-	    });
-	    this.app.$mount(element, true);
-	    return this.app;
-	  }
-	
-	});
-	
-	Router.HashDirver = HashDirver;
-	
-	/**
-	 * 路由插件安装方法
-	 * @param {Component} owner 组件类
-	 * @returns {void} 无返回
-	 */
-	Router.install = function (owner) {
-	
-	  owner.Router = this;
-	
-	  //为组件实例扩展 $router 属性
-	  Object.defineProperty(owner.prototype, '$router', {
-	    get: function /*istanbul ignore next*/get() {
-	      if (this instanceof RouterView) {
-	        return this._router || this.$parent && this.$parent.$router;
-	      } else if (this.$parent) {
-	        return this.$parent.$router;
-	      } else if (!this.$parent) {
-	        return this._router || this.router;
-	      } else {
-	        return null;
-	      }
-	    }
-	  });
-	
-	  //为组件实例扩展 $route 属性
-	  Object.defineProperty(owner.prototype, '$route', {
-	    get: function /*istanbul ignore next*/get() {
-	      return this.$router && this.$router.route;
-	    }
-	  });
-	
-	  //添加全局组件 RouterView
-	  owner.component('RouterView', RouterView);
-	
-	  //添加 link 指令
-	  owner.directives.push(LinkDirective);
-	};
-	
-	module.exports = Router;
-
-/***/ },
-/* 40 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var utils = __webpack_require__(3);
-	
-	/**
-	 * 定义正则表达式常量
-	 */
-	var PLACE_HOLDER_EXPR = /\{.+?\}/gim;
-	var COLLECT_EXPR_STR = '([^\\/]+)';
-	var GREEDY_COLLECT_EXPR_STR = '(.+)';
-	
-	/**
-	 * 定义路由实例扩展 __proto__
-	 **/
-	var routeInstanceProto = {};
-	
-	/**
-	 * 生成 action URL
-	 * @param {String} action action 名称
-	 * @return {String} 对应的 path
-	 **/
-	routeInstanceProto.actionUrl = function (action) {
-	  var self = this;
-	  var actionUrl = self.withoutActionUrl + '/' + action;
-	  actionUrl = actionUrl.replace(/\/\//igm, '/');
-	  return actionUrl;
-	};
-	
-	/**
-	 * 定义路由对象
-	 * @param {Object} routes 路由眏射表
-	 * @param {Object} options 选项
-	 * @returns {void} 无返回
-	 */
-	function Router(routes, options) {
-	  var self = this;
-	  options = options || {};
-	  self.options = options;
-	  self.table = [];
-	  if (routes) {
-	    self.add(routes);
-	  }
-	}
-	
-	/**
-	 * 解析占位符 key 定义
-	 * @param {String} _keyDefStr 占位符定义
-	 * @returns {Object} 占符符信息对象
-	 **/
-	Router.prototype._parseKeyDef = function (_keyDefStr) {
-	  var keyDefStr = _keyDefStr.substring(1, _keyDefStr.length - 1);
-	  var keyDefParts = keyDefStr.split(':');
-	  var keyDef = {};
-	  keyDef.name = keyDefParts[0];
-	  if (keyDef.name[0] == '*') {
-	    keyDef.greedy = true;
-	    keyDef.name = keyDef.name.substring(1);
-	  }
-	  if (keyDefParts[1]) {
-	    keyDef.expr = new RegExp(keyDefParts[1], 'igm');
-	  }
-	  return keyDef;
-	};
-	
-	/**
-	 * 添加一个路由配置
-	 * @param {Object} route 路由项
-	 * @returns {void} 无返回
-	 */
-	Router.prototype.addOne = function (route) {
-	  var self = this;
-	  if (!route || !route.pattern) return;
-	  //取到所有路由key
-	  PLACE_HOLDER_EXPR.lastIndex = 0;
-	  var keyDefs = route.pattern.match(PLACE_HOLDER_EXPR) || [];
-	  route.keys = {};
-	  //初始化 url 匹配测试表达式字符串
-	  var exprStr = '^' + route.pattern + '$';
-	  utils.each(keyDefs, function (i) {
-	    //处理 key 定义
-	    var keyDef = self._parseKeyDef(keyDefs[i]);
-	    route.keys[keyDef.name] = {
-	      index: i,
-	      expr: keyDef.expr
-	    };
-	    //将 'key 占位符' 的表达式，替换为 '提交值的正则表达式'
-	    var collectExprStr = keyDef.greedy ? GREEDY_COLLECT_EXPR_STR : COLLECT_EXPR_STR;
-	    exprStr = exprStr.replace(keyDefs[i], collectExprStr);
-	  });
-	  //生成 url 匹配测试表达式
-	  route.expr = new RegExp(exprStr, 'igm');
-	  //处理所有 route 的 method 
-	  route.methods = route.methods || self.options.defaultMethods;
-	  if (route.methods && route.methods.length > 0) {
-	    route.methods = route.methods.map(function (method) {
-	      return method.toUpperCase();
-	    });
-	  }
-	  //继承原型
-	  route.__proto__ = routeInstanceProto;
-	  self.table.push(route);
-	};
-	
-	/**
-	 * 添加一组路由配置表
-	 * @param {Route} routes 一个路由实体,格式:{pattern:'',target:object}
-	 * @returns {void} 无返回
-	 */
-	Router.prototype.add = function (routes) {
-	  var self = this;
-	  utils.each(routes, function (_name, _route) {
-	    //判断是字符串还是一个对象，并都将 _route 转为对象
-	    var route = utils.isString(_route) ? { 'target': _route } : _route;
-	    //尝试从名称中解析出 method 和 pattern
-	    var name = (_name || '/').toString();
-	    var nameParts = name.split(' ');
-	    if (nameParts.length > 1) {
-	      route.methods = nameParts[0].split(',');
-	      route.pattern = route.pattern || nameParts[1];
-	    } else {
-	      route.pattern = route.pattern || nameParts[0];
-	    }
-	    //解析 controller 和 action
-	    //target 和 controller 不可同时配置，target 可以为 'controller action' 这样的格式
-	    if (route.target) {
-	      var targetParts = route.target.split(' ');
-	      route.controller = route.controller || targetParts[0];
-	      route.action = route.action || targetParts[1];
-	    }
-	    route.target = route.controller;
-	    //添加 route
-	    self.addOne(route);
-	  });
-	};
-	
-	/**
-	 * 解析路由动态 action
-	 * @param {Object} route 路由项
-	 * @returns {Object} 解析后路由项
-	 **/
-	Router.prototype._parseDynamicAction = function (route) {
-	  if (route && route.action && route.action.indexOf('{') > -1) {
-	    utils.each(route.params, function (key, val) {
-	      route.action = utils.replace(route.action, '{' + key + '}', val);
-	    });
-	  }
-	  return route;
-	};
-	
-	/**
-	 * 创建一个路由实例
-	 * @param {object} srcRoute 路由项原型 proto
-	 * @param {String} url URL
-	 * @param {Object} params 参数
-	 * @returns {Object} 路由实例
-	 **/
-	Router.prototype._createRouteInstance = function (srcRoute, url, params) {
-	  var self = this;
-	  var routeInstance = { __proto__: srcRoute };
-	  routeInstance.params = params;
-	  if (routeInstance.action) {
-	    var urlParts = url.split('/');
-	    routeInstance.withoutActionUrl = urlParts.slice(0, urlParts.length - 1);
-	  } else {
-	    routeInstance.withoutActionUrl = url;
-	  }
-	  routeInstance = self._parseDynamicAction(routeInstance);
-	  return routeInstance;
-	};
-	
-	/**
-	 * 通过请求路径获取第一个匹配的路由
-	 * @param {String} url 请求路径
-	 * @param {Boolean} handleActionFromUrl 是否从 URL 中分析 action
-	 * @returns {Route} 路由实体
-	 */
-	Router.prototype.get = function (url, handleActionFromUrl) {
-	  var self = this;
-	  var routeArray = [];
-	  if (utils.isNull(url)) {
-	    return routeArray;
-	  }
-	  url = url.replace(/\/\//igm, '/');
-	  utils.each(self.table, function (i, route) {
-	    route.expr.lastIndex = 0;
-	    if (!route.expr.test(url)) return;
-	    //通过子表达式 '正则的()' 取值
-	    route.expr.lastIndex = 0;
-	    var values = route.expr.exec(url);
-	    //生成 params
-	    var params = {};
-	    var failed = utils.each(route.keys, function (key, keyDef) {
-	      params[key] = values[keyDef.index + 1];
-	      if (!keyDef.expr) return;
-	      keyDef.expr.lastIndex = 0;
-	      if (!keyDef.expr.test(params[key])) {
-	        return true;
-	      }
-	    });
-	    if (failed) return;
-	    routeArray.push(self._createRouteInstance(route, url, params));
-	  });
-	  //确定 parseActionFromUrl 的值
-	  handleActionFromUrl = utils.isNull(handleActionFromUrl) ? self.options.parseActionFromUrl : handleActionFromUrl;
-	  //如果需要 parseActionFromUrl
-	  if (handleActionFromUrl) {
-	    var _routeArray = self._getForActionFromUrl(url);
-	    routeArray.push.apply(routeArray, _routeArray);
-	  }
-	  return routeArray;
-	};
-	
-	/**
-	 * 从 url 中分解出来 action ，然后获取 route array
-	 * @param {String} url 路径
-	 * @returns {Object} 路由实例
-	 **/
-	Router.prototype._getForActionFromUrl = function (url) {
-	  var self = this;
-	  /*
-	  一是在如果直接匹配不成功时，才将 “/” 分隔的最后一个 “字串” 当作 action 进行再一次匹配
-	  */
-	  var urlParts = url.split('/');
-	  var lastIndex = urlParts.length - 1;
-	  var action = urlParts[lastIndex];
-	  //检查分解出来的 action 是否合法
-	  if (action === '' || action.indexOf('.') > -1) {
-	    return null;
-	  }
-	  var ctrlRouteUrl = urlParts.slice(0, lastIndex).join('/');
-	  if (ctrlRouteUrl === '') ctrlRouteUrl = '/';
-	  var ctrlRouteArray = self.get(ctrlRouteUrl, false) || [];
-	  var routeArray = ctrlRouteArray.filter(function (route) {
-	    /**
-	     * 从 URL 分解出来的 action 不可能是动态的 action
-	     * route.action 没有指定时才能作为 parseAction 的合法 route
-	     **/
-	    if (route.action) return false;
-	    //设定 action 作为指向 action 的 route
-	    route.action = action;
-	    //标记一下 action 在 url 中
-	    route.actionFromUrl = true;
-	    return true;
-	  });
-	  return routeArray;
-	};
-	
-	/**
-	 * 过滤出包含指定 method 的 route
-	 * @param {array} routeArray 路由实例数组
-	 * @param {String} method HTTP method
-	 * @returns {Object} 匹配的路由实例
-	 **/
-	Router.prototype.matchByMethod = function (routeArray, method) {
-	  if (!routeArray || routeArray.length < 1) {
-	    return routeArray;
-	  }
-	  return routeArray.filter(function (route) {
-	    if (!route || !route.methods || route.methods.length < 1) {
-	      return false;
-	    }
-	    return route.methods.indexOf(method) > -1;
-	  })[0];
-	};
-	
-	module.exports = Router;
-	
-	/*end*/
-
-/***/ },
-/* 41 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Class = __webpack_require__(4);
-	var EventEmitter = __webpack_require__(7);
-	
-	var SEPARATOR = '#!';
-	var ROOT_PATH = '/';
-	
-	/**
-	 * 基于 has 的路由驱动
-	 */
-	var HashDriver = new Class({
-	  $name: 'HashDriver',
-	  $extends: EventEmitter,
-	
-	  /**
-	   * 路由驱动构造函数
-	   * @param {Object} router 路径实例
-	   * @returns {void} 无返回
-	   */
-	  constructor: function /*istanbul ignore next*/constructor(router) {
-	    this.$super();
-	    this.router = router;
-	    window.addEventListener('hashchange', function () {
-	      this._onChange();
-	    }.bind(this));
-	  },
-	
-	  /**
-	   * 获取当前路径
-	   * @returns {string} 当前路径
-	   */
-	  get: function /*istanbul ignore next*/get() {
-	    return location.hash.split(SEPARATOR)[1] || ROOT_PATH;
-	  },
-	
-	  /**
-	   * 设置当前路径
-	   * @param {string} path 要转到的路径
-	   * @returns {void} 无返回
-	   */
-	  set: function /*istanbul ignore next*/set(path) {
-	    path = path || ROOT_PATH;
-	    location.hash = SEPARATOR + this.router.resolveUri(path, this.get());
-	  },
-	
-	  /**
-	   * 路由发生变化时的处理函数
-	   * @param {string} path 将要转到的路径
-	   * @returns {void} 无返回
-	   */
-	  _onChange: function /*istanbul ignore next*/_onChange(path) {
-	    path = path || this.get() || '';
-	    if (path[0] != ROOT_PATH) path = ROOT_PATH + path;
-	    this.emit('changed', path);
-	  }
-	
-	});
-	
-	module.exports = HashDriver;
-
-/***/ },
-/* 42 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var View = __webpack_require__(34).components.View;
-	
-	var RouterView = View.extend({
-	  properties: {
-	    router: {
-	      test: function /*istanbul ignore next*/test(router) {
-	        return !!router;
-	      },
-	      get: function /*istanbul ignore next*/get() {
-	        return this._router;
-	      },
-	      set: function /*istanbul ignore next*/set(router) {
-	        this._router = router;
-	        this._router.view = this;
-	      }
-	    }
-	  },
-	  onCreated: function /*istanbul ignore next*/onCreated() {
-	    if (!this.router && this.$router) {
-	      this.router = this.$router;
-	    }
-	  }
-	});
-	
-	module.exports = RouterView;
-
-/***/ },
-/* 43 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/*istanbul ignore next*/'use strict';
-	
-	var Directive = __webpack_require__(12);
-	var EventEmitter = __webpack_require__(7);
-	
-	module.exports = new Directive({
-	  name: 'link',
-	  type: Directive.TYPE_ATTRIBUTE,
-	  literal: true,
-	
-	  bind: function /*istanbul ignore next*/bind() {
-	    var eventTarget = this.node.$target || this.node;
-	    this.emiter = new EventEmitter(eventTarget);
-	    this.emiter.addListener(this.decorates[0] || 'tap', function () {
-	      if (!this.scope || !this.scope.$router) return;
-	      this.scope.$router.go(this.path);
-	    }.bind(this), false);
-	  },
-	
-	  unbind: function /*istanbul ignore next*/unbind() {
-	    this.emiter.removeListener();
-	  },
-	
-	  update: function /*istanbul ignore next*/update(path) {
-	    this.path = path;
-	  }
-	
-	});
 
 /***/ }
 /******/ ]);
